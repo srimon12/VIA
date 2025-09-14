@@ -14,13 +14,15 @@ def detect_anomalies(window_min: int):
         data = response.json()
 
         outliers = data.get("outliers", [])
+        latency_ms = data.get("latency_ms", 0)
         if not outliers:
-            return "No anomalies detected in this time window.", [], "---"
+            return "No anomalies detected in this time window.", [], [], f"Latency: {latency_ms} ms"
 
-        # Format as a Markdown table
+        # Format as a Markdown table with Level column
         df = pd.DataFrame([{
             "Score": f"{o['score']:.4f}",
             "Service": o['payload']['service'],
+            "Level": o['payload']['level'],
             "Timestamp": datetime.fromtimestamp(o['payload']['ts']).strftime('%Y-%m-%d %H:%M:%S'),
             "Message": f"```{o['payload']['msg']}```"
         } for o in outliers])
@@ -28,12 +30,16 @@ def detect_anomalies(window_min: int):
         # Sort by score descending
         df = df.sort_values(by="Score", ascending=False)
         
-        return df.to_markdown(index=False), [o["id"] for o in outliers]
+        return df.to_markdown(index=False), [o["id"] for o in outliers], df["Message"].tolist(), f"Latency: {latency_ms} ms"
 
     except requests.exceptions.RequestException as e:
-        return f"## API Error\nCould not connect to backend: `{e}`", []
+        return f"## API Error\nCould not connect to backend: `{e}`", [], [], "Latency: N/A ms"
     except Exception as e:
-        return f"## Error\nAn unexpected error occurred: `{e}`", []
+        return f"## Error\nAn unexpected error occurred: `{e}`", [], [], "Latency: N/A ms"
+
+def copy_message(message: str):
+    """Returns the message to copy to clipboard."""
+    return message.strip("```")
 
 def find_similar(ids: list, window_min: int):
     """Calls the backend to find similar past incidents."""
@@ -70,7 +76,6 @@ def find_similar(ids: list, window_min: int):
     except Exception as e:
         return f"## Error\nAn unexpected error occurred: `{e}`"
 
-
 # --- Gradio UI Layout ---
 with gr.Blocks(theme=gr.themes.Soft(), title="Vector Incident Atlas") as demo:
     gr.Markdown("# 🛰️ Vector Incident Atlas (VIA)")
@@ -85,6 +90,8 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Vector Incident Atlas") as demo:
         with gr.Column(scale=3):
             gr.Markdown("### 2. Review Anomalies")
             anomalies_output = gr.Markdown("Click 'Detect Anomalies' to begin...")
+            copy_btn_container = gr.Column(visible=False)  # Container for copy buttons
+            copy_buttons_state = gr.State([])  # Store messages for copying
 
     gr.Markdown("---")
     
@@ -98,14 +105,31 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Vector Incident Atlas") as demo:
             gr.Markdown("### 4. Triage Past Incidents")
             similar_output = gr.Markdown("Results will appear here...")
 
+    latency_output = gr.Markdown("Latency: N/A ms", visible=True)  # Footer badge
+
     # Hidden state to store the IDs of detected anomalies
     anomaly_ids_state = gr.State([])
 
-    # Button click events
+    # Update copy buttons dynamically
+    def update_copy_buttons(messages):
+        if not messages:
+            return gr.Column(visible=False), []
+        buttons = []
+        for i in range(len(messages)):
+            btn = gr.Button(f"Copy Message {i+1}", variant="secondary")
+            btn.click(fn=copy_message, inputs=[gr.State(value=messages[i])], outputs=[gr.State()])
+            buttons.append(btn)
+        return gr.Column([gr.Markdown("#### Copy Messages"), *buttons], visible=True), buttons
+
+    # Detect anomalies and update UI
     detect_btn.click(
         fn=detect_anomalies,
         inputs=[window_slider],
-        outputs=[anomalies_output, anomaly_ids_state]
+        outputs=[anomalies_output, anomaly_ids_state, copy_buttons_state, latency_output]
+    ).then(
+        fn=update_copy_buttons,
+        inputs=[copy_buttons_state],
+        outputs=[copy_btn_container, copy_buttons_state]
     )
     
     similar_btn.click(
