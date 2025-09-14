@@ -59,7 +59,7 @@ def main():
             collection_name=args.collection,
             vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE),
             quantization_config=models.ScalarQuantization(
-                scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, quantile=0.99)
+                scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, quantile=0.99, always_ram=True)
             ),
         )
 
@@ -69,17 +69,14 @@ def main():
     windows = ["\n".join(lines[i:i+args.window]) for i in range(0, len(lines), args.window) if i+args.window <= len(lines)]
 
     new_windows = []
-    seen_in_batch = set() # <<< FIX: In-memory set to track hashes for this run
+    seen_in_batch = set()
     cursor = conn.cursor()
     for w in windows:
         h = hashlib.sha256(w.encode()).hexdigest()
-        
-        # Check against DB (persistent) AND in-memory set (current batch)
         if h in seen_in_batch or cursor.execute("SELECT 1 FROM hashes WHERE hash=?", (h,)).fetchone():
             continue
-        
         new_windows.append({"text": w, "hash": h})
-        seen_in_batch.add(h) # <<< FIX: Add new hash to the in-memory set
+        seen_in_batch.add(h)
 
     if not new_windows:
         log.info("No new log windows to ingest.")
@@ -96,7 +93,6 @@ def main():
             parse_fail += 1
         else:
             parse_ok += 1
-        
         parsed_points.append({
             "text": w_data["text"],
             "payload": {

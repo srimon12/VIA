@@ -7,7 +7,6 @@ import logging
 app = FastAPI()
 logger = logging.getLogger(__name__)
 
-
 client = QdrantClient(host="localhost", port=6333)
 
 class AtlasQuery(BaseModel):
@@ -37,18 +36,15 @@ async def anomalies(q: AtlasQuery):
         try:
             recs = client.recommend("logs_atlas", positive=[p.id], query_filter=filter_, limit=20)
             mean_score = sum(r.score for r in recs) / len(recs) if recs else 0
-            if mean_score > 0.7:
-                outliers.append({"id": p.id, "payload": p.payload, "score": mean_score})        
+            anomaly_score = 1 - mean_score  # Invert: low similarity = high anomaly
+            if anomaly_score > 0.1:  # Lowered threshold for testing
+                outliers.append({"id": p.id, "payload": p.payload, "score": anomaly_score})
         except Exception as e:
             logger.warning({"action": "anomalies", "error": str(e), "point_id": p.id})
             continue
     logger.info({"action": "anomalies", "outliers": len(outliers)})
     citations = [{"id": o["id"], "ts": o["payload"]["ts"], "hash": o["payload"]["hash"]} for o in outliers]
     return {"outliers": outliers, "citations": citations}
-
-# In app/main.py
-
-# In app/main.py
 
 @app.post("/similar")
 async def similar(q: SimilarQuery):
@@ -69,23 +65,22 @@ async def similar(q: SimilarQuery):
         logger.error({"action": "similar", "error": str(e)})
         return {"groups": [], "citations": []}
 
-    # FIX #1: Changed g.points to g.hits
     result_groups = [
         {
-            "group": g.id, 
+            "group": g.id,
             "items": [{"id": p.id, "score": p.score, "payload": p.payload} for p in g.hits]
-        } 
+        }
         for g in groups.groups
     ]
     
-    # FIX #2: Changed g.points to g.hits
     citations = [
-        {"id": p.id, "ts": p.payload["ts"], "hash": p.payload["hash"]} 
+        {"id": p.id, "ts": p.payload["ts"], "hash": p.payload["hash"]}
         for g in groups.groups for p in g.hits
     ]
 
     logger.info({"action": "similar", "groups": len(result_groups)})
     return {"groups": result_groups, "citations": citations}
+
 @app.get("/health")
 async def health():
     try:
