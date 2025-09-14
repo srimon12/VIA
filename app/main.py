@@ -21,33 +21,37 @@ class Citations(BaseModel):
 
 @app.post("/anomalies")
 async def anomalies(q: AtlasQuery):
+    start = time.perf_counter()
     now = int(time.time())
     filter_ = models.Filter(must=[models.FieldCondition(key="ts", range=models.Range(gte=now - q.window_sec))])
     try:
         points = client.scroll("logs_atlas", scroll_filter=filter_, limit=1000)[0]
     except Exception as e:
         logger.error({"action": "anomalies", "error": str(e)})
-        return {"outliers": [], "citations": []}
+        return {"outliers": [], "citations": [], "latency_ms": 0}
     if not points:
         logger.info({"action": "anomalies", "outliers": 0})
-        return {"outliers": [], "citations": []}
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return {"outliers": [], "citations": [], "latency_ms": latency_ms}
     outliers = []
     for p in points:
         try:
             recs = client.recommend("logs_atlas", positive=[p.id], query_filter=filter_, limit=20)
             mean_score = sum(r.score for r in recs) / len(recs) if recs else 0
-            anomaly_score = 1 - mean_score  # Invert: low similarity = high anomaly
-            if anomaly_score > 0.1:  # Lowered threshold for testing
+            anomaly_score = 1 - mean_score
+            if anomaly_score > 0.1:
                 outliers.append({"id": p.id, "payload": p.payload, "score": anomaly_score})
         except Exception as e:
             logger.warning({"action": "anomalies", "error": str(e), "point_id": p.id})
             continue
     logger.info({"action": "anomalies", "outliers": len(outliers)})
     citations = [{"id": o["id"], "ts": o["payload"]["ts"], "hash": o["payload"]["hash"]} for o in outliers]
-    return {"outliers": outliers, "citations": citations}
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    return {"outliers": outliers, "citations": citations, "latency_ms": latency_ms}
 
 @app.post("/similar")
 async def similar(q: SimilarQuery):
+    start = time.perf_counter()
     now = int(time.time())
     past_filter = models.Filter(must=[
         models.FieldCondition(key="ts", range=models.Range(lt=now - q.window_sec))
@@ -63,7 +67,7 @@ async def similar(q: SimilarQuery):
         )
     except Exception as e:
         logger.error({"action": "similar", "error": str(e)})
-        return {"groups": [], "citations": []}
+        return {"groups": [], "citations": [], "latency_ms": 0}
 
     result_groups = [
         {
@@ -79,7 +83,8 @@ async def similar(q: SimilarQuery):
     ]
 
     logger.info({"action": "similar", "groups": len(result_groups)})
-    return {"groups": result_groups, "citations": citations}
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    return {"groups": result_groups, "citations": citations, "latency_ms": latency_ms}
 
 @app.get("/health")
 async def health():

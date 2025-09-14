@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 import pathlib
+import os
 from qdrant_client import QdrantClient, models
 from fastembed import TextEmbedding
 
@@ -20,6 +21,7 @@ BGL_PATTERN = re.compile(
     r"(?P<component>RAS)\s+(?P<sub_component>\w+)\s+(?P<level>\w+)\s+(?P<msg>.*)$"
 )
 
+
 def parse_line(line: str) -> dict:
     """Parses a single line using the canonical BGL regex."""
     match = BGL_PATTERN.match(line.strip())
@@ -32,13 +34,14 @@ def parse_line(line: str) -> dict:
         }
     return {"ts": int(time.time()), "service": "unknown", "level": "INFO"}
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest log files into Qdrant for VIA.")
     parser.add_argument("--file", required=True, type=pathlib.Path, help="Path to the log file.")
     parser.add_argument("--collection", default="logs_atlas", help="Name of the Qdrant collection.")
     parser.add_argument("--window", type=int, default=3, help="Number of lines to group into a single document.")
     args = parser.parse_args()
-
+    
     if not args.file.exists():
         log.error(f"File not found: {args.file}")
         return
@@ -51,22 +54,26 @@ def main():
     conn.execute("CREATE TABLE IF NOT EXISTS hashes (hash TEXT PRIMARY KEY)")
 
     # --- Ensure Qdrant Collection Exists ---
-    try:
-        client.get_collection(collection_name=args.collection)
-    except Exception:
-        log.info(f"Creating Qdrant collection: {args.collection}")
-        client.recreate_collection(
+    quantize = os.getenv('QUANTIZE', '0') == '1'
+    if not client.collection_exists(collection_name=args.collection):
+        log.info(f"Creating Qdrant collection: {args.collection} (quantize={quantize})")
+        quant_config = models.ScalarQuantization(
+            scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, quantile=0.99, always_ram=True)
+        ) if quantize else None
+        client.create_collection(
             collection_name=args.collection,
             vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE),
-            quantization_config=models.ScalarQuantization(
-                scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, quantile=0.99, always_ram=True)
-            ),
+            quantization_config=quant_config,
         )
 
     # --- Read, Window, and Dedup ---
     log.info(f"Processing file: {args.file}")
     lines = args.file.read_text(encoding="utf-8").splitlines()
-    windows = ["\n".join(lines[i:i+args.window]) for i in range(0, len(lines), args.window) if i+args.window <= len(lines)]
+    windows = [
+        "\n".join(lines[i:i + args.window])
+        for i in range(0, len(lines), args.window)
+        if i + args.window <= len(lines)
+    ]
 
     new_windows = []
     seen_in_batch = set()
@@ -74,14 +81,17 @@ def main():
     for w in windows:
         h = hashlib.sha256(w.encode()).hexdigest()
         if h in seen_in_batch or cursor.execute("SELECT 1 FROM hashes WHERE hash=?", (h,)).fetchone():
+            log.debug(f"Skipping duplicate window: {w[:50]}... (hash: {h})")
             continue
         new_windows.append({"text": w, "hash": h})
         seen_in_batch.add(h)
+
 
     if not new_windows:
         log.info("No new log windows to ingest.")
         return
     log.info(f"Found {len(new_windows)} new windows to process.")
+
 
     # --- Parse Metadata ---
     parsed_points = []
@@ -100,7 +110,7 @@ def main():
                 "service": meta["service"],
                 "level": meta["level"],
                 "hash": w_data["hash"],
-                "msg": w_data["text"][:500],
+                "msg": w_data["text"][:500]
             }
         })
 
@@ -123,12 +133,14 @@ def main():
     conn.commit()
     conn.close()
 
-    log.info({
-        "status": "complete",
-        "points_ingested": len(qdrant_points),
-        "parse_success": parse_ok,
-        "parse_fail": parse_fail
-    })
+    log.info(
+        {
+            "status": "complete",
+            "points_ingested": len(qdrant_points),
+            "parse_success": parse_ok,
+            "parse_fail": parse_fail,
+        }
+    )
 
 if __name__ == "__main__":
     main()
