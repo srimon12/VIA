@@ -1,0 +1,14 @@
+.env
+__pycache__
+*.pyc
+*.pyo
+qdrant_data/
+logs/*.log
+venv/
+.env.local
+loghub
+uv.lock
+prd-chatgpt.md
+prd-grok.md
+digest.txt
+todo.md
