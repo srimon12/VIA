@@ -3,6 +3,7 @@ services:
     image: qdrant/qdrant:latest
     ports:
       - "6333:6333"
+      - "6334:6334" 
     mem_limit: 512m
     volumes:
       - ./qdrant_data:/qdrant/storage

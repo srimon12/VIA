@@ -21,7 +21,11 @@ async def patch_rhythm_anomaly(
     request: PatchRequest,
     control_service: ControlService = Depends()
 ):
-    # The context logs would be used to generate an eval, for now we just patch
     reason = f"Patched by user via API"
-    control_service.patch_anomaly(request.rhythm_hash, reason)
-    return {"status": "ok", "message": f"Hash {request.rhythm_hash} patched."}
+    # Pass the context logs from the request to the service
+    control_service.patch_anomaly(
+        rhythm_hash=request.rhythm_hash,
+        reason=reason,
+        context_logs=request.context_logs
+    )
+    return {"status": "ok", "message": f"Hash {request.rhythm_hash} patched and eval case generated."}

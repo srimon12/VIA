@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 import time
 from contextlib import asynccontextmanager
 from typing import List
@@ -12,11 +11,13 @@ import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+import json
+from datetime import datetime
 
 # --- Configuration ---
 load_dotenv()
-BGL_LOG_PATH = os.getenv("BGL_LOG_PATH", "loghub/BGL/BGL_2k.log")
-INGESTOR_URL = os.getenv("INGESTOR_URL", "http://localhost:8000/ingest/stream")
+BGL_LOG_PATH = os.getenv("BGL_LOG_PATH", "logs/telemetry_logs.jsonl")  # Updated default to JSONL
+INGESTOR_URL = os.getenv("INGESTOR_URL", "http://localhost:8000/api/v1/ingest/stream")
 STREAM_INTERVAL_SEC = int(os.getenv("STREAM_INTERVAL_SEC", 2))
 STREAM_BATCH_SIZE = int(os.getenv("STREAM_BATCH_SIZE", 50))
 
@@ -35,31 +36,26 @@ class OTelLogRecord(BaseModel):
     Body: str
     Attributes: List[OTelLogAttribute] = []
 
-# --- BGL Log Parser ---
-BGL_PATTERN = re.compile(
-    r"^(?P<label>-|\d+)\s+(?P<unix_ts>\d+)\s+(?P<date>\S+)\s+(?P<node>\S+)\s+"
-    r"(?P<time>\S+)\s+(?P<device>\S+)\s+"
-    r"(?P<component>RAS)\s+(?P<sub_component>\w+)\s+(?P<level>\w+)\s+(?P<msg>.*)$"
-)
-
-def parse_bgl_to_otel(line: str) -> OTelLogRecord | None:
-    """Parses a BGL log line and converts it into a structured OTelLogRecord."""
-    match = BGL_PATTERN.match(line.strip())
-    if not match:
-        return None
-    
-    data = match.groupdict()
-    return OTelLogRecord(
-        TimeUnixNano=int(data["unix_ts"]) * 1_000_000_000, # Convert sec to ns
-        SeverityText=data["level"],
-        Body=data["msg"],
-        Attributes=[
-            OTelLogAttribute(key="service.name", value=data["node"]),
-            OTelLogAttribute(key="log.label", value=data["label"]),
-            OTelLogAttribute(key="log.component", value=data["component"]),
-            OTelLogAttribute(key="log.sub_component", value=data["sub_component"]),
+def parse_json_to_otel(line: str) -> OTelLogRecord | None:
+    """Parses a JSONL OTel log line into a structured OTelLogRecord."""
+    try:
+        data = json.loads(line.strip())
+        log_rec = data["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]
+        ts = int(log_rec.get("timeUnixNano", int(datetime.now().timestamp() * 1e9)))
+        body = log_rec["body"].get("stringValue", "") if isinstance(log_rec["body"], dict) else str(log_rec["body"])
+        attrs = [
+            OTelLogAttribute(key=a["key"], value=a["value"].get("stringValue", ""))
+            for a in log_rec.get("attributes", [])
         ]
-    )
+        return OTelLogRecord(
+            TimeUnixNano=ts,
+            SeverityText=log_rec.get("severityText", "INFO"),
+            Body=body,
+            Attributes=attrs
+        )
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        log.error(f"Parse error: {e}")
+        return None
 
 # --- Background Streaming Task ---
 async def stream_logs(client: httpx.AsyncClient):
@@ -77,7 +73,7 @@ async def stream_logs(client: httpx.AsyncClient):
                         f.seek(0)
                         line = f.readline()
                     
-                    otel_record = parse_bgl_to_otel(line)
+                    otel_record = parse_json_to_otel(line)
                     if otel_record:
                         batch.append(otel_record.model_dump())
                 

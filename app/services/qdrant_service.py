@@ -36,10 +36,20 @@ class QdrantService:
         ]
 
     def setup_collections(self):
-        log.info(f"Recreating Tier 1 collection: {settings.TIER_1_COLLECTION_PREFIX}")       
+        log.info(f"Recreating Tier 1 collection: {settings.TIER_1_COLLECTION_PREFIX}")
         self.client.recreate_collection(
             collection_name=settings.TIER_1_COLLECTION_PREFIX,
-            vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE),
+            vectors_config=models.VectorParams(
+                size=384,
+                distance=models.Distance.COSINE,
+                on_disk=True,
+                hnsw_config=models.HnswConfigDiff(on_disk=True, m=16, ef_construct=100),
+            ),
+            quantization_config=models.ScalarQuantization(
+                scalar=models.ScalarQuantizationConfig(
+                    type=models.ScalarType.INT8, quantile=0.99, always_ram=True
+                )
+            ),
         )
 
     def _ensure_daily_tier2_collection(self, collection_name: str):
@@ -50,9 +60,41 @@ class QdrantService:
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config={
-                    "log_dense_vector": models.VectorParams(size=384, distance=models.Distance.COSINE)
+                    "log_dense_vector": models.VectorParams(
+                        size=384,  # Assuming bge-small-en-v1.5 dim
+                        distance=models.Distance.COSINE,
+                        on_disk=True,  # On-disk storage for scale
+                        hnsw_config=models.HnswConfigDiff(  # HNSW optimizations
+                            m=16,
+                            ef_construct=100,
+                            full_scan_threshold=10000,
+                            on_disk=True,  # HNSW on-disk
+                        ),  # that's 2MB per point when on disk
+                    )
                 },
-                # Add sparse vector config here in the future
+                quantization_config=models.ScalarQuantization(  # Scalar quantization for mem efficiency
+                    scalar=models.ScalarQuantizationConfig(
+                        type=models.ScalarType.INT8,
+                        quantile=0.99,
+                        always_ram=True  # Reuse for perf
+                    ),
+                ),
+                shard_number=2,  # Basic sharding for demo
+                shard_key_selector=models.ShardKeySelector(  # Multi-tenancy via service
+                    shard_keys=["service"]  # Shard by payload 'service' key
+                ),
+            )
+            # Create full-text index for hybrid (prep for Step 2)
+            self.client.create_payload_index(
+                collection_name=collection_name,
+                field_name="body",
+                field_schema=models.TextIndexParams(
+                    type=models.TextIndexType.TEXT,
+                    tokenizer=models.TokenizerType.WORD,
+                    min_token_len=2,
+                    max_token_len=20,
+                    lowercase=True,
+                ),
             )
 
     def embed_and_upsert_tier1(self, points: List[Dict[str, Any]]) -> int:
@@ -64,7 +106,7 @@ class QdrantService:
             for point, vector in zip(points, embeddings)
         ]
         self.client.upsert(collection_name=settings.TIER_1_COLLECTION_PREFIX, points=qdrant_points)
-        return len(qdrant_points)
+        return len(qdrant_points) 
 
     def ingest_to_tier2(self, events: List[Dict[str, Any]]) -> int:
         """Ingests promoted events into the correct daily Tier 2 collection."""
@@ -109,43 +151,42 @@ class QdrantService:
         search_tasks = [
             self.client.search(collection_name=name, search_request=search_request)
             for name in target_collections
-        ]
-        
+        ]        
         results_from_collections = await asyncio.gather(*search_tasks, return_exceptions=True)
         
         all_hits = []
+
         for result in results_from_collections:
             if not isinstance(result, Exception):
                 all_hits.extend(result)
         
         # Re-rank all results by score
         return sorted(all_hits, key=lambda x: x.score, reverse=True)
-
-    async def federated_recommend_groups(self, prefix: str, start_ts: int, end_ts: int, recommend_request: models.RecommendGroupsRequest) -> List[models.Recommendations]:
-        """Performs a recommend_groups query across multiple daily collections in parallel."""
-        target_collections = self._get_collections_for_window(prefix, start_ts, end_ts)
-        
-        # We need to query one collection first to see if it returns any groups.
-        # A simple parallel approach can be complex to merge.
-        # For a robust implementation, we iterate until we find enough groups.
-        
-        all_groups = []
-        for collection_name in reversed(target_collections): # Start from the most recent day
+    async def federated_recommend(self, prefix: str, start_ts: int, end_ts: int, recommend_request: models.RecommendRequest) -> List[models.ScoredPoint]:
+        collections = self._get_collections_for_window(prefix, start_ts, end_ts)
+        results = []
+        for coll in collections:
             try:
-                result = await self.client.recommend_groups(
-                    collection_name=collection_name,
-                    recommend_request=recommend_request
+                points = await self.client.recommend_async(
+                    collection_name=coll,
+                    request=recommend_request
                 )
-                if result and result.groups:
-                    all_groups.extend(result.groups)
-                
-                # Stop if we have enough groups to satisfy the request limit
-                if len(all_groups) >= recommend_request.limit:
-                    break
-            except Exception as e:
-                log.warning(f"Could not perform recommend_groups on '{collection_name}': {e}")
+                results.extend(points)
+            except Exception:
                 continue
-        
-        # The result is a list of groups, which can be returned directly.
-        # De-duplication of groups can be added here if necessary.
-        return all_groups[:recommend_request.limit]
+        # sort by score desc; truncate
+        return sorted(results, key=lambda p: p.score, reverse=True)[:recommend_request.limit]
+    async def federated_group_search(self, prefix: str, start_ts: int, end_ts: int, search_groups_request: models.SearchGroupsRequest) -> List[models.GroupId]:
+        collections = self._get_collections_for_window(prefix, start_ts, end_ts)
+        groups_all = []
+        for coll in collections:
+            try:
+                resp = await self.client.search_groups_async(
+                    collection_name=coll,
+                    request=search_groups_request
+                )
+                groups_all.extend(resp.groups or [])
+            except Exception:
+                continue
+        # Optional: merge by group.id if needed (best-score top hit kept)
+        return groups_all

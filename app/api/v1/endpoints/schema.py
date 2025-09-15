@@ -1,26 +1,23 @@
-# file: app/api/v1/endpoints/schema.py
-# Action: Create this new file.
+# In app/api/v1/endpoints/schema.py
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 
 from app.schemas.models import DetectSchemaRequest, LogSchema
-from app.services.anom_detection import AnomalyDetectionService
+from app.services.schema_service import SchemaService # <-- CORRECT IMPORT
 
 router = APIRouter()
 log = logging.getLogger("api.endpoints.schema")
 
 # Dependency for the service
-def get_anomaly_service():
-    # In a real app with state, this would be a singleton.
-    # For now, this is fine.
-    return AnomalyDetectionService()
+def get_schema_service(): # <-- CORRECT DEPENDENCY
+    return SchemaService()
 
 @router.post("/detect", response_model=LogSchema)
 async def detect_schema_endpoint(
     request: DetectSchemaRequest,
-    service: AnomalyDetectionService = Depends(get_anomaly_service)
+    service: SchemaService = Depends(get_schema_service) # <-- CORRECT SERVICE
 ):
     """
     Analyzes a sample of log lines and suggests a parsing schema.
@@ -30,7 +27,6 @@ async def detect_schema_endpoint(
         if not suggested_schema or not suggested_schema.fields:
             raise HTTPException(status_code=400, detail="Could not detect a valid schema from the provided logs.")
         
-        # We don't save it yet, just return the suggestion
         suggested_schema.source_name = request.source_name
         return suggested_schema
     except Exception as e:
@@ -40,7 +36,7 @@ async def detect_schema_endpoint(
 @router.post("/", response_model=LogSchema)
 async def create_or_update_schema(
     schema: LogSchema,
-    service: AnomalyDetectionService = Depends(get_anomaly_service)
+    service: SchemaService = Depends(get_schema_service) # <-- CORRECT SERVICE
 ):
     """
     Saves or updates a parsing schema for a given data source.
@@ -55,7 +51,7 @@ async def create_or_update_schema(
 @router.get("/{source_name}", response_model=LogSchema)
 async def get_schema(
     source_name: str,
-    service: AnomalyDetectionService = Depends(get_anomaly_service)
+    service: SchemaService = Depends(get_schema_service) # <-- CORRECT SERVICE
 ):
     """
     Retrieves the saved parsing schema for a given data source.

@@ -32,6 +32,7 @@ class DetectSchemaRequest(BaseModel):
 class AnomalyQuery(BaseModel):
     start_ts: int
     end_ts: int
+    text_filter: Optional[str] = None
 
 class RhythmQuery(BaseModel):
     window_sec: int = 300
@@ -50,3 +51,9 @@ class PatchRequest(BaseModel):
 class Tier1Point(BaseModel):
     vector: List[float]
     payload: Dict[str, Any]
+    
+class TriageQuery(BaseModel):
+    positive_ids: List[str]
+    negative_ids: List[str] = []
+    start_ts: int
+    end_ts: int

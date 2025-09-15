@@ -1,10 +1,11 @@
-# file: app/services/control_service.py
-# Action: Create this new file.
+# In app/services/control_service.py
 
 import logging
 import time
 import sqlite3
-from typing import Dict, Set
+from typing import Dict, Set, List
+import pathlib
+import yaml # Add this import
 
 from app.db.registry import get_db_connection
 
@@ -13,13 +14,13 @@ log = logging.getLogger("api.services.control")
 class ControlService:
     """Service for the Adaptive Control Loop (suppression and patching)."""
     def __init__(self):
-        # In-memory cache for snoozed anomalies. In production, use Redis.
         self.suppression_cache: Dict[str, int] = {}
-        # In-memory set of permanent patches for fast lookups.
         self.patch_registry: Set[str] = self._load_patches()
+        self.evals_dir = pathlib.Path("evals")
+        self.evals_dir.mkdir(exist_ok=True)
 
     def _load_patches(self) -> Set[str]:
-        """Loads active ALLOW_LIST patches from the DB into an in-memory set."""
+        # ... (this method remains the same)
         log.info("Loading patch registry into memory...")
         conn = get_db_connection()
         try:
@@ -32,14 +33,37 @@ class ControlService:
         finally:
             conn.close()
 
+    def _generate_eval_case(self, rhythm_hash: str, context_logs: List[str]):
+        """Generates a YAML file for a regression test case."""
+        eval_data = {
+            "description": f"Auto-generated eval case for patched rhythm_hash.",
+            "rhythm_hash": rhythm_hash,
+            "context_logs": context_logs,
+            "expected_outcome": {
+                "is_anomaly": False,
+                "reason": "This hash was patched as a false positive by an operator."
+            }
+        }
+        
+        # Use first 12 chars of hash and timestamp for a unique filename
+        filename = f"eval_{rhythm_hash[:12]}_{int(time.time())}.yml"
+        filepath = self.evals_dir / filename
+        
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                yaml.dump(eval_data, f, default_flow_style=False, sort_keys=False)
+            log.info(f"Successfully generated eval case: {filepath}")
+        except Exception as e:
+            log.error(f"Failed to generate eval case for hash {rhythm_hash}: {e}")
+
     def suppress_anomaly(self, rhythm_hash: str, duration_sec: int):
-        """Adds a rhythm_hash to the temporary suppression cache."""
+        # ... (this method remains the same)
         expiry_ts = int(time.time()) + duration_sec
         self.suppression_cache[rhythm_hash] = expiry_ts
         log.info(f"Suppressed rhythm_hash '{rhythm_hash}' for {duration_sec} seconds.")
 
-    def patch_anomaly(self, rhythm_hash: str, reason: str):
-        """Adds a permanent ALLOW_LIST patch to the registry DB."""
+    def patch_anomaly(self, rhythm_hash: str, reason: str, context_logs: List[str]):
+        """Adds a permanent ALLOW_LIST patch and generates an eval case."""
         conn = get_db_connection()
         try:
             with conn:
@@ -51,24 +75,23 @@ class ControlService:
                     """,
                     (rhythm_hash, reason, int(time.time()))
                 )
-            # Update in-memory set
             self.patch_registry.add(rhythm_hash)
             log.info(f"Patched rhythm_hash '{rhythm_hash}' as permanently allowed.")
+            
+            # --- NEW: Generate the eval case ---
+            if context_logs:
+                self._generate_eval_case(rhythm_hash, context_logs)
+
         finally:
             conn.close()
 
     def is_suppressed_or_patched(self, rhythm_hash: str) -> bool:
-        """Checks if a hash is currently suppressed or permanently patched."""
-        # Check permanent patch registry first (cheapest)
+        # ... (this method remains the same)
         if rhythm_hash in self.patch_registry:
             return True
-        
-        # Check temporary suppression cache
         if rhythm_hash in self.suppression_cache:
             if time.time() < self.suppression_cache[rhythm_hash]:
                 return True
             else:
-                # Clean up expired entry
                 del self.suppression_cache[rhythm_hash]
-        
         return False
