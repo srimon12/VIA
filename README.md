@@ -55,3 +55,10 @@ Vector Incident Atlas (VIA) detects unusual patterns in system logs within a spe
 - **Expected Output:** Ingesting `sample.log` yields ~180 points. UI should show ~20 ERROR anomalies for a 60-minute window. If none appear, check timestamps in `sample.log` (regenerate if old) or Qdrant dashboard (`http://localhost:6333/dashboard`).
 - **Debugging:** Check `ingest.py` logs for deduplication (`DEBUG` level) or `parse_fail`. Test `/anomalies` with `curl -X POST http://localhost:8000/anomalies -H "Content-Type: application/json" -d '{"window_sec": 3600}'`.
 - **Hackathon Submission:** Video demo (<60s) shows ingestion, anomaly detection, and grouped recommendations. Submit by Sep 16, 2025, 11:59 PM PT (Sep 17, 12:29 PM IST).
+
+
+## License
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html) - see the [LICENSE](./LICENSE) file for details.
