@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
         log.info("Background worker cancelled successfully.")
 
 app = FastAPI(
-    title="Vector Incident Atlas (VIA)",
+    title="VeriStamp Incident Atlas (VIA)",
     description="A real-time, two-tiered log anomaly detection and triage system showcasing advanced Qdrant features.",
     version="1.0.0",
     lifespan=lifespan

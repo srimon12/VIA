@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="VIA - OTel Chaos Streamer",
+    title="VeriStamp Incident Atlas - OTel Chaos Streamer",
     description="A high-throughput log firehose that randomly injects novel, frequency, and latency anomalies for real-time testing.",
     lifespan=lifespan
 )

@@ -1,8 +1,20 @@
-# 🛰️ Vector Incident Atlas (VIA)
+# 🛰️ VeriStamp Incident Atlas (VIA)
 
-Vector Incident Atlas (VIA) is a real-time, on-premise log intelligence platform. It acts as a semantic radar for your entire log stream, automatically detecting behavioral anomalies and providing the context needed to resolve incidents faster.
+**A Qdrant "Think Outside the Bot" Hackathon Submission**
 
-Instead of reactive keyword searching, VIA uses a Two-Tiered Detection architecture to understand the "rhythm" of your system. It identifies novel and frequency-based anomalies in real-time, promotes them to a permanent "knowledge graph," and learns from operator feedback, becoming an adaptive immune system for your operations.
+VeriStamp Incident Atlas (VIA) is a real-time, on-premise log intelligence platform designed to showcase the advanced, non-AI capabilities of Qdrant for observability. Instead of a typical RAG chatbot, VIA treats the entire log stream as a living system, using vector search to detect behavioral anomalies in its "rhythm".
+
+### Innovative Use of Qdrant Features
+
+This project moves beyond simple semantic search to highlight Qdrant's power as a core operational intelligence engine:
+- **Two-Tiered Detection**: A high-throughput Tier 1 monitor uses "Rhythm Hashing" for real-time anomaly detection, promoting significant events to a permanent Tier 2 knowledge graph.
+- **Advanced Triage Engine**: The "Atlas" UI is powered by Qdrant's Recommendation API, allowing operators to provide positive and negative examples to surgically isolate the root cause of an incident.
+- **Automated Incident Clustering**: We use Qdrant's Grouping API to dynamically cluster related log events into unique incidents directly within the database, without external ML models.
+- **Scalable by Design**: The architecture uses time-partitioned collections and a federated query layer to handle massive data volumes, with Tier 2 collections using on-disk storage and scalar quantization for a minimal memory footprint.
+- **Adaptive Control Loop**: A complete feedback system allows operators to "Snooze" alerts or "Mark as Normal" to permanently patch the detection engine, with every patch generating a new regression test case.
+
+---
+_ (Your existing README content follows here...) _
 
 ## Core Features
 
@@ -12,7 +24,7 @@ Instead of reactive keyword searching, VIA uses a Two-Tiered Detection architect
 
 
 ### Adaptive Control Loop:
-A complete feedback system that allows operators to "Snooze" alerts for temporary relief or "Mark as Normal" to permanently patch the detection engine, creating a robust evaluation harness.
+A complete feedback system that allows operators to "Snooze" alerts for temporary relief or "Mark as Normal" to permanently patch the detection engine, creating a robust evaluation harness. 
 
 ### Streaming-First Architecture:
 Designed to ingest data from real-time sources like OpenTelemetry (OTel) streams, with a modular, multi-service backend built on FastAPI.
@@ -56,36 +68,59 @@ Create a `.env` file in the root of the project. You can copy the contents from 
 
 ```bash
 # .env
-BGL_LOG_PATH="loghub/BGL/BGL_2k.log"
+
+# --- Backend & Qdrant Configuration ---
+# These variables configure the main FastAPI application (app/main.py)
+# See app/core/config.py for all options 
+QDRANT_HOST="localhost"
+QDRANT_PORT=6333
+QDRANT_REPLICATION_FACTOR=2 # Must be <= number of qdrant nodes in docker-compose.yml 
+QDRANT_SHARD_NUMBER=2
+REGISTRY_DB_PATH="registry.db"
+
+# --- OTel Mock Streamer Configuration ---
+# These variables configure the log generator (otel_mock/main.py)
 INGESTOR_URL="http://localhost:8000/api/v1/ingest/stream"
-STREAM_INTERVAL_SEC=2
-STREAM_BATCH_SIZE=50
+LOGS_PER_SECOND=100
+MAX_BATCH_SIZE=100
+MAX_BATCH_INTERVAL_SEC=0.5
 ```
 
 ### 3. Installation
-Install the required Python dependencies.
+This project uses `uv` for fast dependency management. If you don't have it, install it first:
 
 ```bash
-pip install -r requirements.txt
+# Install uv (if you haven't already)
+pip install uv
+```
+
+Then, install the project dependencies from `pyproject.toml`:
+
+```bash
+uv pip install
 ```
 
 ### 4. Running the System Locally
-You will need three separate terminal windows to run the full system.
+You will need three separate terminal windows to run the full system. 
 
 #### Terminal 1: Start Qdrant
+
 ```bash
 docker-compose up
 ```
+
 This starts Qdrant and makes it available at http://localhost:6333.
 
 #### Terminal 2: Start the OTel Mock Streamer
 This service will begin streaming log data to the main API.
+
 ```bash
 uvicorn otel_mock.main:app --host 127.0.0.1 --port 8002 --reload
 ```
 
 #### Terminal 3: Start the Main VIA API Backend
 This runs the core application. On startup, it will initialize the necessary databases and Qdrant collections.
+
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -102,6 +137,7 @@ curl http://localhost:8000/health
 
 #### Step B: Analyze Tier 1 for Novel Anomalies
 After letting the streamer run for about 30-60 seconds, check for rhythm anomalies. This call will detect novel patterns and automatically promote them to Tier 2.
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/analysis/tier1/rhythm_anomalies \
 -H "Content-Type: application/json" \
@@ -109,8 +145,7 @@ curl -X POST http://localhost:8000/api/v1/analysis/tier1/rhythm_anomalies \
 ```
 
 #### Step C: Query Tier 2 for Promoted Events
-Check the permanent forensic index for the events that were just promoted from Tier 1.
-**Note:** The best way to explore Tier-2 is now through the interactive UI!
+Check the permanent forensic index for the events that were just promoted from Tier 1.**Note:** The best way to explore Tier-2 is now through the interactive UI!
 ```bash
 # Get the current Unix timestamp
 # (On Linux/macOS: `date +%s`, on Windows you may need to get it manually)
@@ -139,23 +174,27 @@ If you run the Tier 1 analysis again (Step B), this anomaly should no longer app
 
 All endpoints are prefixed with `/api/v1`.
 
-### Ingestion:
-- `POST /ingest/stream` - Endpoint for the OTel streamer to send log batches.
+### Ingestion & Streaming
+- `POST /ingest/stream`: Endpoint for the OTel streamer to send log batches.
+- `GET /stream/tail`: Tails the live log file for the UI, with support for text filtering.
 
-### Analysis:
-- `POST /analysis/tier1/rhythm_anomalies` - Detects novel patterns in Tier 1 and promotes them.
-- `POST /analysis/tier2/anomalies` - Retrieves promoted event clusters from Tier 2.
-- `POST /analysis/tier2/similar` - Finds similar past events from the Tier 2 knowledge graph.
+### Analysis
+- `POST /analysis/tier1/rhythm_anomalies`: Detects novel and frequency-based patterns in Tier 1 and promotes them.
+- `POST /analysis/tier2/clusters`: Retrieves and groups promoted event clusters from the Tier 2 forensic index.
+- `POST /analysis/tier2/triage`: Finds similar past events using positive/negative examples from the Tier 2 knowledge graph.
 
-### Control Loop:
-- `POST /control/suppress` - Temporarily snoozes a rhythm_hash.
-- `POST /control/patch` - Permanently marks a rhythm_hash as normal.
+### Adaptive Control Loop
+- `POST /control/suppress`: Temporarily snoozes a specific `rhythm_hash`.
+- `POST /control/patch`: Permanently marks a `rhythm_hash` as normal and generates an eval case.
+- `GET /control/rules`: Fetches all active patch and suppression rules.
+- `DELETE /control/patch/{hash}`: Deactivates a permanent patch rule
+- `DELETE /control/suppress/{hash}`: Removes a temporary suppression rule.
 
-### Schema Management:
-
-- `POST /schemas/detect` - Suggests a schema from a sample of raw logs.
-- `POST /schemas` - Saves a schema configuration.
-- `GET /schemas/{source_name}` - Retrieves a saved schema.
+### Schema Management
+- `POST /schemas/detect`: Suggests a schema from a sample of raw logs.
+- `POST /schemas`: Saves or updates a schema configuration.
+- `GET /schemas`: Lists the names of all saved schemas.
+- `GET /schemas/{source_name}`: Retrieves a specific saved schema by name.
 
 ## Technology Stack
 
@@ -169,7 +208,7 @@ All endpoints are prefixed with `/api/v1`.
 ## Roadmap
 
 - [ ] Build a production-grade Vite/React frontend for visualization and interaction.
-- [ ] Expand the "Rhythm Hashing" engine to include frequency-based anomalies.
+- [x] Expand the "Rhythm Hashing" engine to include frequency-based anomalies.
 - [ ] Add real-world ingestion sources (e.g., Kafka consumer, direct OTel collector integration).
 - [ ] Integrate with ChatOps tools (Slack) for proactive alerting.
 
