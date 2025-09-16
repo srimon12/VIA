@@ -1,17 +1,16 @@
-# file: app/api/v1/endpoints/control.py
-# Action: Create this new file.
-
-from fastapi import APIRouter, Depends
-
+from fastapi import APIRouter, Depends, Request
 from app.schemas.models import SuppressRequest, PatchRequest
 from app.services.control_service import ControlService
 
 router = APIRouter()
 
+def get_control_service(req: Request) -> ControlService:
+    return req.app.state.control_service
+
 @router.post("/suppress")
 async def suppress_rhythm_anomaly(
     request: SuppressRequest,
-    control_service: ControlService = Depends()
+    control_service: ControlService = Depends(get_control_service),
 ):
     control_service.suppress_anomaly(request.rhythm_hash, request.duration_sec)
     return {"status": "ok", "message": f"Hash {request.rhythm_hash} suppressed."}
@@ -19,13 +18,11 @@ async def suppress_rhythm_anomaly(
 @router.post("/patch")
 async def patch_rhythm_anomaly(
     request: PatchRequest,
-    control_service: ControlService = Depends()
+    control_service: ControlService = Depends(get_control_service),
 ):
-    reason = f"Patched by user via API"
-    # Pass the context logs from the request to the service
     control_service.patch_anomaly(
         rhythm_hash=request.rhythm_hash,
-        reason=reason,
-        context_logs=request.context_logs
+        reason="Patched by user via API",
+        context_logs=request.context_logs,
     )
     return {"status": "ok", "message": f"Hash {request.rhythm_hash} patched and eval case generated."}

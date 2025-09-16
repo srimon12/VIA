@@ -18,18 +18,35 @@ class SchemaService:
         if not sample_logs:
             return None
         
-        # Heuristic 1: Try parsing as JSON
+        # Heuristic 1: Try parsing as JSON (OTel nested support)
         try:
             first_line_json = json.loads(sample_logs[0])
             if isinstance(first_line_json, dict):
-                fields = []
-                for key, value in first_line_json.items():
-                    field_type = "integer" if isinstance(value, int) else "string"
-                    fields.append(SchemaField(name=key, type=field_type, source_field=key))
-                return LogSchema(source_name="", fields=fields)
-        except (json.JSONDecodeError, TypeError):
-            pass # Not JSON, proceed to next heuristic
+                # Try OTel nested shape
+                rl = (first_line_json.get("resourceLogs") or [{}])[0]
+                scope = (rl.get("scopeLogs") or [{}])[0]
+                rec = (scope.get("logRecords") or [{}])[0]
 
+                # Extract nested paths with fallbacks
+                def _svc(attrs):
+                    for a in (attrs or []):
+                        if a.get("key") == "service.name":
+                            v = a.get("value") or {}
+                            # OTel value wrappers: {"stringValue": "..."} etc.
+                            return v.get("stringValue") or v.get("intValue") or v.get("doubleValue") or v.get("boolValue")
+                    return None
+
+                service_guess = _svc((rl.get("resource") or {}).get("attributes"))
+                # Build a canonical schema we use everywhere in VIA
+                fields = [
+                    SchemaField(name="timestamp", type="datetime", source_field="resourceLogs[0].scopeLogs[0].logRecords[0].timeUnixNano"),
+                    SchemaField(name="level",     type="keyword",  source_field="resourceLogs[0].scopeLogs[0].logRecords[0].severityText"),
+                    SchemaField(name="service",   type="keyword",  source_field="resourceLogs[0].resource.attributes[service.name]"),
+                    SchemaField(name="message",   type="string",   source_field="resourceLogs[0].scopeLogs[0].logRecords[0].body.stringValue"),
+                ]
+                return LogSchema(source_name="", fields=fields)
+        except (json.JSONDecodeError, TypeError): pass  # Not JSON, continue
+                
         # Heuristic 2: BGL-style fixed position
         bgl_detect_pattern = re.compile(
             r"^(?P<label>-|\d+)\s+(?P<unix_ts>\d+)\s+(?P<date>\S+)\s+(?P<node>\S+)\s+"
@@ -37,7 +54,7 @@ class SchemaService:
             r"(?P<level>\w+)\s+(?P<message>.*)$"
         )
         match = bgl_detect_pattern.match(sample_logs[0].strip())
-        if match:
+        if match:            
             fields = [
                 SchemaField(name="timestamp", type="datetime", source_field="unix_ts"),
                 SchemaField(name="level", type="keyword", source_field="level"),
@@ -45,6 +62,7 @@ class SchemaService:
                 SchemaField(name="message", type="string", source_field="message"),
             ]
             return LogSchema(source_name="", fields=fields)
+        
         
         return None
 
@@ -69,7 +87,7 @@ class SchemaService:
         conn = get_db_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT schema_json FROM schemas WHERE source_name = ?", (source_name,))
+            cursor.execute('SELECT schema_json FROM schemas WHERE source_name = ?', (source_name,))
             row = cursor.fetchone()
             if row:
                 return LogSchema.model_validate_json(row["schema_json"])

@@ -1,23 +1,20 @@
-# In app/api/v1/endpoints/schema.py
+# file: app/api/v1/endpoints/schema.py
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
-from typing import List
-
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.schemas.models import DetectSchemaRequest, LogSchema
-from app.services.schema_service import SchemaService # <-- CORRECT IMPORT
+from app.services.schema_service import SchemaService
 
 router = APIRouter()
 log = logging.getLogger("api.endpoints.schema")
 
-# Dependency for the service
-def get_schema_service(): # <-- CORRECT DEPENDENCY
-    return SchemaService()
+def get_schema_service(req: Request) -> SchemaService:
+    return req.app.state.schema_service
 
 @router.post("/detect", response_model=LogSchema)
 async def detect_schema_endpoint(
     request: DetectSchemaRequest,
-    service: SchemaService = Depends(get_schema_service) # <-- CORRECT SERVICE
+    service: SchemaService = Depends(get_schema_service),
 ):
     """
     Analyzes a sample of log lines and suggests a parsing schema.
@@ -33,10 +30,11 @@ async def detect_schema_endpoint(
         log.error(f"Schema detection failed: {e}")
         raise HTTPException(status_code=500, detail="An internal error occurred during schema detection.")
 
+
 @router.post("/", response_model=LogSchema)
 async def create_or_update_schema(
     schema: LogSchema,
-    service: SchemaService = Depends(get_schema_service) # <-- CORRECT SERVICE
+    service: SchemaService = Depends(get_schema_service),
 ):
     """
     Saves or updates a parsing schema for a given data source.
@@ -51,7 +49,7 @@ async def create_or_update_schema(
 @router.get("/{source_name}", response_model=LogSchema)
 async def get_schema(
     source_name: str,
-    service: SchemaService = Depends(get_schema_service) # <-- CORRECT SERVICE
+    service: SchemaService = Depends(get_schema_service),
 ):
     """
     Retrieves the saved parsing schema for a given data source.

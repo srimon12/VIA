@@ -1,5 +1,5 @@
 # file: app/schemas/models.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 # --- OTel & Log Ingestion ---
@@ -11,7 +11,7 @@ class OTelLogRecord(BaseModel):
     TimeUnixNano: int
     SeverityText: str = "INFO"
     Body: str
-    Attributes: List[OTelLogAttribute] = []
+    Attributes: List[OTelLogAttribute] = Field(default_factory=list)
 
 # --- Schema Management ---
 class SchemaField(BaseModel):
@@ -54,6 +54,6 @@ class Tier1Point(BaseModel):
     
 class TriageQuery(BaseModel):
     positive_ids: List[str]
-    negative_ids: List[str] = []
+    negative_ids: List[str] = Field(default_factory=list)
     start_ts: int
     end_ts: int

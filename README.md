@@ -10,6 +10,7 @@ Instead of reactive keyword searching, VIA uses a Two-Tiered Detection architect
 - **Tier 1 (Rhythm Monitor)**: A high-throughput, in-memory monitor that analyzes the behavioral patterns of all logs (including INFO/DEBUG) using "Rhythm Hashing" to detect novel anomalies.
 - **Tier 2 (Forensic Index)**: A permanent, time-partitioned knowledge graph where high-signal events from Tier 1 are promoted for deep, federated analysis and historical correlation.
 
+
 ### Adaptive Control Loop:
 A complete feedback system that allows operators to "Snooze" alerts for temporary relief or "Mark as Normal" to permanently patch the detection engine, creating a robust evaluation harness.
 
@@ -109,13 +110,14 @@ curl -X POST http://localhost:8000/api/v1/analysis/tier1/rhythm_anomalies \
 
 #### Step C: Query Tier 2 for Promoted Events
 Check the permanent forensic index for the events that were just promoted from Tier 1.
+**Note:** The best way to explore Tier-2 is now through the interactive UI!
 ```bash
 # Get the current Unix timestamp
 # (On Linux/macOS: `date +%s`, on Windows you may need to get it manually)
 END_TS=$(date +%s)
 START_TS=$((END_TS - 3600)) # Look back 1 hour
 
-curl -X POST http://localhost:8000/api/v1/analysis/tier2/anomalies \
+curl -X POST http://localhost:8000/api/v1/analysis/tier2/clusters \
 -H "Content-Type: application/json" \
 -d "{\"start_ts\": $START_TS, \"end_ts\": $END_TS}"
 ```
@@ -150,11 +152,13 @@ All endpoints are prefixed with `/api/v1`.
 - `POST /control/patch` - Permanently marks a rhythm_hash as normal.
 
 ### Schema Management:
+
 - `POST /schemas/detect` - Suggests a schema from a sample of raw logs.
 - `POST /schemas` - Saves a schema configuration.
 - `GET /schemas/{source_name}` - Retrieves a saved schema.
 
 ## Technology Stack
+
 - **Backend**: FastAPI, Python 3.12+
 - **Vector Database**: Qdrant
 - **Embeddings**: fastembed with ONNX models
@@ -163,6 +167,7 @@ All endpoints are prefixed with `/api/v1`.
 - **Local Services**: Docker Compose, Uvicorn
 
 ## Roadmap
+
 - [ ] Build a production-grade Vite/React frontend for visualization and interaction.
 - [ ] Expand the "Rhythm Hashing" engine to include frequency-based anomalies.
 - [ ] Add real-world ingestion sources (e.g., Kafka consumer, direct OTel collector integration).

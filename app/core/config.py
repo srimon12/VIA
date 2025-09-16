@@ -1,45 +1,35 @@
-# In app/core/config.py
+# file: app/core/config.py
+# Action: Replace the entire file with this content.
 
 from pydantic_settings import BaseSettings
-import pathlib
 
 class Settings(BaseSettings):
     """
     Centralized application configuration.
     Values are loaded from environment variables (e.g., from a .env file).
     """
-    # Qdrant Configuration
+    # --- Qdrant Cluster Configuration ---
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
     
-    # Collection Name Prefixes (for time-partitioning)
-    TIER_1_COLLECTION_PREFIX: str = "via_rhythm_monitor"
-    TIER_2_COLLECTION_PREFIX: str = "via_forensic_index"
+    # CRITICAL: These must match your docker-compose setup for a cluster
+    QDRANT_REPLICATION_FACTOR: int = 2 # Must be <= number of nodes
+    QDRANT_SHARD_NUMBER: int = 2       # Should ideally be a multiple of node count
+    
+    # --- Collection & Model Configuration ---
+    TIER_1_COLLECTION_PREFIX: str = "via_rhythm_monitor_v2"
+    TIER_2_COLLECTION_PREFIX: str = "via_forensic_index_v2"
 
-    # Embedding Model Configuration
-    TIER_1_EMBED_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    TIER_1_EMBED_MODEL: str = "BAAI/bge-small-en-v1.5" 
     TIER_2_EMBED_MODEL: str = "BAAI/bge-small-en-v1.5"
-    
-    # Database path for schemas and patches
+
+
+    # --- Database Path for Registries ---
     REGISTRY_DB_PATH: str = "registry.db"
-
-    # --- ADD THESE MISSING FIELDS FROM YOUR .env ---
-    BGL_LOG_PATH: str = "logs/telemetry_logs.jsonl"
-    INGESTOR_URL: str = "http://localhost:8000/api/v1/ingest/stream"
-    STREAM_INTERVAL_SEC: int = 2
-    STREAM_BATCH_SIZE: int = 50
-    
-    # These fields below seem to be from an older config. 
-    # Add them if they are still in your .env to prevent errors,
-    # but we should consider removing them from the .env file later if they are unused.
-    QDRANT_URL: str = "localhost:6333" 
-    MODEL: str = "BAAI/bge-small-en-v1.5"
-    STREAMER_HOST: str = "localhost"
-    QUANTIZE: str = "1"
-
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
 
+# Create a single settings instance to be used throughout the application
 settings = Settings()
