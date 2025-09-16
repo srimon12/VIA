@@ -3,7 +3,7 @@ __pycache__
 *.pyc
 *.pyo
 qdrant_data/
-logs/*.log
+logs/
 venv/
 .venv/
 .env
@@ -13,3 +13,5 @@ uv.lock
 digest.txt
 todo.md
 prds/
+evals/
+registry.db

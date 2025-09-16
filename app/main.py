@@ -1,95 +1,69 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
-from qdrant_client import QdrantClient, models
-from pydantic import BaseModel
-import time
+# file: app/main.py
 import logging
+import asyncio
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 
-app = FastAPI()
-logger = logging.getLogger(__name__)
+from app.api.v1.router import api_router
+from app.db.registry import initialize_registry
+from app.services.qdrant_service import QdrantService
+from app.services.ingestion_service import IngestionService
+from app.services.control_service import ControlService
+from app.services.schema_service import SchemaService
+from app.services.promotion_service import PromotionService
+from app.services.rhythm_analysis_service import RhythmAnalysisService
+from app.services.forensic_analysis_service import ForensicAnalysisService
+from app.worker import run_rhythm_analysis_periodically
 
-client = QdrantClient(host="localhost", port=6333)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+log = logging.getLogger("api")
 
-class AtlasQuery(BaseModel):
-    window_sec: int = 3600
-
-class SimilarQuery(BaseModel):
-    positive_ids: list[str]
-    window_sec: int = 3600
-
-class Citations(BaseModel):
-    citations: list[dict]
-
-@app.post("/anomalies")
-async def anomalies(q: AtlasQuery):
-    start = time.perf_counter()
-    now = int(time.time())
-    filter_ = models.Filter(must=[models.FieldCondition(key="ts", range=models.Range(gte=now - q.window_sec))])
-    try:
-        points = client.scroll("logs_atlas", scroll_filter=filter_, limit=1000)[0]
-    except Exception as e:
-        logger.error({"action": "anomalies", "error": str(e)})
-        return {"outliers": [], "citations": [], "latency_ms": 0}
-    if not points:
-        logger.info({"action": "anomalies", "outliers": 0})
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        return {"outliers": [], "citations": [], "latency_ms": latency_ms}
-    outliers = []
-    for p in points:
-        try:
-            recs = client.recommend("logs_atlas", positive=[p.id], query_filter=filter_, limit=20)
-            mean_score = sum(r.score for r in recs) / len(recs) if recs else 0
-            anomaly_score = 1 - mean_score
-            if anomaly_score > 0.1:
-                outliers.append({"id": p.id, "payload": p.payload, "score": anomaly_score})
-        except Exception as e:
-            logger.warning({"action": "anomalies", "error": str(e), "point_id": p.id})
-            continue
-    logger.info({"action": "anomalies", "outliers": len(outliers)})
-    citations = [{"id": o["id"], "ts": o["payload"]["ts"], "hash": o["payload"]["hash"]} for o in outliers]
-    latency_ms = int((time.perf_counter() - start) * 1000)
-    return {"outliers": outliers, "citations": citations, "latency_ms": latency_ms}
-
-@app.post("/similar")
-async def similar(q: SimilarQuery):
-    start = time.perf_counter()
-    now = int(time.time())
-    past_filter = models.Filter(must=[
-        models.FieldCondition(key="ts", range=models.Range(lt=now - q.window_sec))
-    ])
-    try:
-        groups = client.recommend_groups(
-            collection_name="logs_atlas",
-            positive=q.positive_ids,
-            query_filter=past_filter,
-            group_by="service",
-            limit=3,
-            group_size=5
-        )
-    except Exception as e:
-        logger.error({"action": "similar", "error": str(e)})
-        return {"groups": [], "citations": [], "latency_ms": 0}
-
-    result_groups = [
-        {
-            "group": g.id,
-            "items": [{"id": p.id, "score": p.score, "payload": p.payload} for p in g.hits]
-        }
-        for g in groups.groups
-    ]
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """On startup, initialize services and launch the background worker."""
+    log.info("Application startup...")
+    initialize_registry()
     
-    citations = [
-        {"id": p.id, "ts": p.payload["ts"], "hash": p.payload["hash"]}
-        for g in groups.groups for p in g.hits
-    ]
+    # Create service singletons
+    qdrant_service = QdrantService()
+    control_service = ControlService()
+    promotion_service = PromotionService(qdrant_service)
+    
+    await qdrant_service.setup_collections()
 
-    logger.info({"action": "similar", "groups": len(result_groups)})
-    latency_ms = int((time.perf_counter() - start) * 1000)
-    return {"groups": result_groups, "citations": citations, "latency_ms": latency_ms}
-
-@app.get("/health")
-async def health():
+    # Make services available via app state
+    app.state.qdrant_service = qdrant_service
+    app.state.control_service = control_service
+    app.state.promotion_service = promotion_service
+    app.state.ingestion_service = IngestionService(qdrant_service)
+    app.state.rhythm_analysis_service = RhythmAnalysisService(qdrant_service, control_service, promotion_service)
+    app.state.forensic_analysis_service = ForensicAnalysisService(qdrant_service)
+    app.state.schema_service = SchemaService()
+    
+    # --- Start the automated background worker ---
+    worker_task = asyncio.create_task(run_rhythm_analysis_periodically(app))
+    app.state.worker_task = worker_task
+    
+    yield
+    
+    log.info("Application shutdown...")
+    # --- Gracefully shut down the worker ---
+    log.info("Cancelling background worker...")
+    app.state.worker_task.cancel()
     try:
-        has_collection = client.has_collection("logs_atlas")
-        return {"status": "ok", "qdrant": has_collection}
-    except Exception as e:
-        return {"status": "error", "qdrant": False, "error": str(e)}
+        await app.state.worker_task
+    except asyncio.CancelledError:
+        log.info("Background worker cancelled successfully.")
+
+app = FastAPI(
+    title="Vector Incident Atlas (VIA)",
+    description="A real-time, two-tiered log anomaly detection and triage system showcasing advanced Qdrant features.",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.include_router(api_router, prefix="/api/v1")
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    return {"status": "ok"}
