@@ -24,7 +24,7 @@ _ (Your existing README content follows here...) _
 
 
 ### Adaptive Control Loop:
-A complete feedback system that allows operators to "Snooze" alerts for temporary relief or "Mark as Normal" to permanently patch the detection engine, creating a robust evaluation harness.
+A complete feedback system that allows operators to "Snooze" alerts for temporary relief or "Mark as Normal" to permanently patch the detection engine, creating a robust evaluation harness. 
 
 ### Streaming-First Architecture:
 Designed to ingest data from real-time sources like OpenTelemetry (OTel) streams, with a modular, multi-service backend built on FastAPI.
@@ -68,36 +68,59 @@ Create a `.env` file in the root of the project. You can copy the contents from 
 
 ```bash
 # .env
-BGL_LOG_PATH="loghub/BGL/BGL_2k.log"
+
+# --- Backend & Qdrant Configuration ---
+# These variables configure the main FastAPI application (app/main.py)
+# See app/core/config.py for all options 
+QDRANT_HOST="localhost"
+QDRANT_PORT=6333
+QDRANT_REPLICATION_FACTOR=2 # Must be <= number of qdrant nodes in docker-compose.yml 
+QDRANT_SHARD_NUMBER=2
+REGISTRY_DB_PATH="registry.db"
+
+# --- OTel Mock Streamer Configuration ---
+# These variables configure the log generator (otel_mock/main.py)
 INGESTOR_URL="http://localhost:8000/api/v1/ingest/stream"
-STREAM_INTERVAL_SEC=2
-STREAM_BATCH_SIZE=50
+LOGS_PER_SECOND=100
+MAX_BATCH_SIZE=100
+MAX_BATCH_INTERVAL_SEC=0.5
 ```
 
 ### 3. Installation
-Install the required Python dependencies.
+This project uses `uv` for fast dependency management. If you don't have it, install it first:
 
 ```bash
-pip install -r requirements.txt
+# Install uv (if you haven't already)
+pip install uv
+```
+
+Then, install the project dependencies from `pyproject.toml`:
+
+```bash
+uv pip install
 ```
 
 ### 4. Running the System Locally
-You will need three separate terminal windows to run the full system.
+You will need three separate terminal windows to run the full system. 
 
 #### Terminal 1: Start Qdrant
+
 ```bash
 docker-compose up
 ```
+
 This starts Qdrant and makes it available at http://localhost:6333.
 
 #### Terminal 2: Start the OTel Mock Streamer
 This service will begin streaming log data to the main API.
+
 ```bash
 uvicorn otel_mock.main:app --host 127.0.0.1 --port 8002 --reload
 ```
 
 #### Terminal 3: Start the Main VIA API Backend
 This runs the core application. On startup, it will initialize the necessary databases and Qdrant collections.
+
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -114,6 +137,7 @@ curl http://localhost:8000/health
 
 #### Step B: Analyze Tier 1 for Novel Anomalies
 After letting the streamer run for about 30-60 seconds, check for rhythm anomalies. This call will detect novel patterns and automatically promote them to Tier 2.
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/analysis/tier1/rhythm_anomalies \
 -H "Content-Type: application/json" \
@@ -121,8 +145,7 @@ curl -X POST http://localhost:8000/api/v1/analysis/tier1/rhythm_anomalies \
 ```
 
 #### Step C: Query Tier 2 for Promoted Events
-Check the permanent forensic index for the events that were just promoted from Tier 1.
-**Note:** The best way to explore Tier-2 is now through the interactive UI!
+Check the permanent forensic index for the events that were just promoted from Tier 1.**Note:** The best way to explore Tier-2 is now through the interactive UI!
 ```bash
 # Get the current Unix timestamp
 # (On Linux/macOS: `date +%s`, on Windows you may need to get it manually)
@@ -151,23 +174,27 @@ If you run the Tier 1 analysis again (Step B), this anomaly should no longer app
 
 All endpoints are prefixed with `/api/v1`.
 
-### Ingestion:
-- `POST /ingest/stream` - Endpoint for the OTel streamer to send log batches.
+### Ingestion & Streaming
+- `POST /ingest/stream`: Endpoint for the OTel streamer to send log batches.
+- `GET /stream/tail`: Tails the live log file for the UI, with support for text filtering.
 
-### Analysis:
-- `POST /analysis/tier1/rhythm_anomalies` - Detects novel patterns in Tier 1 and promotes them.
-- `POST /analysis/tier2/clusters` - Retrieves promoted event clusters from Tier 2.
-- `POST /analysis/tier2/triage` - Finds similar past events using positive/negative examples from the Tier 2 knowledge graph.
+### Analysis
+- `POST /analysis/tier1/rhythm_anomalies`: Detects novel and frequency-based patterns in Tier 1 and promotes them.
+- `POST /analysis/tier2/clusters`: Retrieves and groups promoted event clusters from the Tier 2 forensic index.
+- `POST /analysis/tier2/triage`: Finds similar past events using positive/negative examples from the Tier 2 knowledge graph.
 
-### Control Loop:
-- `POST /control/suppress` - Temporarily snoozes a rhythm_hash.
-- `POST /control/patch` - Permanently marks a rhythm_hash as normal.
+### Adaptive Control Loop
+- `POST /control/suppress`: Temporarily snoozes a specific `rhythm_hash`.
+- `POST /control/patch`: Permanently marks a `rhythm_hash` as normal and generates an eval case.
+- `GET /control/rules`: Fetches all active patch and suppression rules.
+- `DELETE /control/patch/{hash}`: Deactivates a permanent patch rule
+- `DELETE /control/suppress/{hash}`: Removes a temporary suppression rule.
 
-### Schema Management:
-
-- `POST /schemas/detect` - Suggests a schema from a sample of raw logs.
-- `POST /schemas` - Saves a schema configuration.
-- `GET /schemas/{source_name}` - Retrieves a saved schema.
+### Schema Management
+- `POST /schemas/detect`: Suggests a schema from a sample of raw logs.
+- `POST /schemas`: Saves or updates a schema configuration.
+- `GET /schemas`: Lists the names of all saved schemas.
+- `GET /schemas/{source_name}`: Retrieves a specific saved schema by name.
 
 ## Technology Stack
 
