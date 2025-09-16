@@ -12,44 +12,45 @@ log = logging.getLogger("api.services.forensic_analysis")
 class ForensicAnalysisService:
     def __init__(self, qdrant_service: QdrantService) -> None:
         self.qdrant_service = qdrant_service
-
-    async def find_tier2_clusters(self, start_ts: int, end_ts: int, text_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        must_conditions = [] # Start with an empty list
-
-        # FIX: Only add the time filter if start_ts and end_ts are provided
-        if start_ts is not None and end_ts is not None:
-            must_conditions.extend([
-                models.FieldCondition(key="start_ts", range=models.Range(lte=end_ts)),
-                models.FieldCondition(key="end_ts", range=models.Range(gte=start_ts)),
-            ])
         
-        query_vector = [0.0] * self.qdrant_service.tier2_dim() 
+    async def find_tier2_clusters(self, start_ts: int, end_ts: int, text_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        must_conditions = []
+
+        if start_ts is not None and end_ts is not None:
+            must_conditions.append(
+                models.FieldCondition(key="start_ts", range=models.Range(gte=start_ts, lte=end_ts))
+            )
+        
+        query_vector_data = [0.0] * self.qdrant_service.tier2_dim() 
         
         if text_filter:
             must_conditions.append(models.FieldCondition(key="body", match=models.MatchText(text=text_filter)))
-            query_vector = list(self.qdrant_service.tier2_dense_model.embed([text_filter]))[0]
+            query_vector_data = list(self.qdrant_service.tier2_dense_model.embed([text_filter]))[0]
 
-        req = models.SearchGroupsRequest(
-            vector=models.NamedVector(name="log_dense_vector", vector=query_vector),
-            filter=models.Filter(must=must_conditions) if must_conditions else None, # Use filter only if conditions exist
-            group_by="rhythm_hash",
-            group_size=1,
-            limit=100,
-            with_payload=True
-        )
+        # FIX: Define query parameters directly, just like in the successful test script.
+        query_vector = models.NamedVector(name="log_dense_vector", vector=query_vector_data)
+        query_filter = models.Filter(must=must_conditions) if must_conditions else None
 
-        # FIX: Determine which collections to search
         if start_ts and end_ts:
             collections = self.qdrant_service._get_collections_for_window(settings.TIER_2_COLLECTION_PREFIX, start_ts, end_ts)
         else:
-            # If no time window, search ALL existing tier 2 collections (Note: can be slow over time)
             all_collections = self.qdrant_service._sync_client.get_collections().collections
             collections = [c.name for c in all_collections if c.name.startswith(settings.TIER_2_COLLECTION_PREFIX)]
         
         if not collections:
              return []
 
-        tasks = [self.qdrant_service.client.search_groups(collection_name=c, request=req) for c in collections]
+        # FIX: Call the client with direct keyword arguments, not a request object.
+        tasks = [self.qdrant_service.client.search_groups(
+            collection_name=c,
+            query_vector=query_vector,
+            query_filter=query_filter,
+            group_by="rhythm_hash",
+            group_size=1,
+            limit=100,
+            with_payload=True
+        ) for c in collections]
+        
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         groups = []
@@ -59,8 +60,11 @@ class ForensicAnalysisService:
         
         groups.sort(key=lambda g: g.hits[0].score, reverse=True)
 
-        return [{"cluster_id": g.id, "incident_count": len(g.hits), "top_hit": g.hits[0].payload} for g in groups if g.hits]
-
+        return [{
+            "cluster_id": g.id, 
+            "incident_count": g.hits[0].payload.get('count', 1), 
+            "top_hit": g.hits[0].payload
+        } for g in groups if g.hits]
     async def triage_similar_events(self, positive_ids: List[str], negative_ids: List[str], start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
         if not positive_ids:
             return []

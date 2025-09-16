@@ -22,8 +22,8 @@ async def get_rhythm_anomalies(
     """Manual endpoint for debugging Tier 1. The primary detection is now done by the background worker."""
     anomalies_result = await rhythm_service.find_rhythm_anomalies(query.window_sec)
     return {
-        "novel_anomalies": anomalies_result["novel_anomalies"],
-        "frequency_anomalies": anomalies_result["frequency_anomalies"],
+        "novel_anomalies": anomalies_result.get("novel_anomalies", []),
+        "frequency_anomalies": anomalies_result.get("frequency_anomalies", []),
     }
 
 @router.post("/tier2/clusters")

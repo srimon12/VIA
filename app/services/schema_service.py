@@ -49,8 +49,8 @@ class SchemaService:
                 
         # Heuristic 2: BGL-style fixed position
         bgl_detect_pattern = re.compile(
-            r"^(?P<label>-|\d+)\s+(?P<unix_ts>\d+)\s+(?P<date>\S+)\s+(?P<node>\S+)\s+"
-            r"(?P<time>\S+)\s+(?P<device>\S+)\s+(?P<component>RAS)\s+(?P<sub_component>\w+)\s+"
+            r"^(?P<unix_ts>\d+)\s+(?P<date>\S+)\s+(?P<node>\S+)\s+(?P<time>\S+)\s+"
+            r"(?P<device>\S+)\s+(?P<component>RAS)\s+(?P<sub_component>\w+)\s+"
             r"(?P<level>\w+)\s+(?P<message>.*)$"
         )
         match = bgl_detect_pattern.match(sample_logs[0].strip())

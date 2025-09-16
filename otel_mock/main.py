@@ -6,29 +6,27 @@ import os
 import random
 import time
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator
 
 import httpx
 from fastapi import FastAPI
 from dotenv import load_dotenv
 
-# We directly import and use the high-quality simulator you built
 from generate_logs import ServiceSimulator
 
 # --- Configuration ---
 load_dotenv()
 INGESTOR_URL = os.getenv("INGESTOR_URL", "http://localhost:8000/api/v1/ingest/stream")
-LOGS_PER_SECOND = int(os.getenv("LOGS_PER_SECOND", 50))
+LOGS_PER_SECOND = int(os.getenv("LOGS_PER_SECOND", 100)) # Increased for more rapid testing
 MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 100))
-MAX_BATCH_INTERVAL_SEC = float(os.getenv("MAX_BATCH_INTERVAL_SEC", 1.0))
+MAX_BATCH_INTERVAL_SEC = float(os.getenv("MAX_BATCH_INTERVAL_SEC", 0.5))
 
-# --- Anomaly Windows (from generate_logs.py) ---
-# This defines the "script" for our live, looping simulation.
-LATENCY_ANOMALY_WINDOW = (120, 140)  # 2m0s - 2m20s into the cycle
-FREQUENCY_ANOMALY_WINDOW = (240, 260)  # 4m0s - 4m20s into the cycle
-NOVEL_ERROR_WINDOW = (360, 362)      # 6m0s - 6m2s into the cycle
-STACK_TRACE_WINDOW = (480, 482)      # 8m0s - 8m2s into the cycle
-SIMULATION_CYCLE_SEC = 600           # The entire simulation repeats every 10 minutes
+# --- Anomaly Injection Probabilities ---
+# AFTER: Anomalies are now ~10x more frequent for demo purposes.
+NOVEL_ANOMALY_PROB = 0.002         # ~1 in 500 logs
+FREQUENCY_SPIKE_PROB = 0.01          # ~1 in 100 logs
+STACK_TRACE_PROB = 0.005          # ~1 in 200 logs     
+LATENCY_ANOMALY_PROB = 0.02        
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 log = logging.getLogger("otel_mock")
@@ -36,42 +34,39 @@ log = logging.getLogger("otel_mock")
 
 async def log_generator() -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Runs a continuous, looping simulation using the sophisticated ServiceSimulator
-    to generate high-quality logs and timed anomalies on the fly.
+    Runs a continuous, probabilistic simulation to randomly inject a variety
+    of anomalies into a high-throughput log stream.
     """
     simulator = ServiceSimulator()
-    start_time = time.time()
-    log.info(f"--- Starting new 10-minute live simulation cycle. ---")
+    log.info(f"--- Starting randomized anomaly firehose. ---")
 
     while True:
+        # Control the overall log rate
         await asyncio.sleep(1.0 / LOGS_PER_SECOND)
         
-        # --- Live Simulation Time Logic ---
-        time_since_start = time.time() - start_time
-        if time_since_start > SIMULATION_CYCLE_SEC:
-            log.warning("--- Simulation cycle complete. Resetting for a new 10-minute demo loop. ---")
-            start_time = time.time()
-            time_since_start = 0.0
-
         trace_id = f"{int(time.time()*1e6):x}"
         span_id = f"{int(time.time()*1e6):x}"
         
-        # --- Ported Anomaly Injection Logic from generate_logs.py ---
-        # This uses your high-quality, timed anomaly script live.
-        in_latency_window = LATENCY_ANOMALY_WINDOW[0] <= time_since_start < LATENCY_ANOMALY_WINDOW[1]
-        in_frequency_window = FREQUENCY_ANOMALY_WINDOW[0] <= time_since_start < FREQUENCY_ANOMALY_WINDOW[1]
-        in_novel_window = NOVEL_ERROR_WINDOW[0] <= time_since_start < NOVEL_ERROR_WINDOW[1]
-        in_stack_window = STACK_TRACE_WINDOW[0] <= time_since_start < STACK_TRACE_WINDOW[1]
+        p = random.random()
 
-        # Every log is generated live with a current timestamp by the simulator
-        if in_novel_window:
+        # --- Use probabilities to decide which type of log to generate ---
+        if p < NOVEL_ANOMALY_PROB:
+            log.warning(">>> Injecting NOVEL ANOMALY...")
             log_record = simulator.generate_novel_error_log(trace_id, span_id)
-        elif in_stack_window:
+        
+        elif p < NOVEL_ANOMALY_PROB + STACK_TRACE_PROB:
+            log.warning(">>> Injecting STACK TRACE ANOMALY...")
             log_record = simulator.generate_stack_trace_log(trace_id, span_id)
-        elif in_frequency_window:
+
+        elif p < NOVEL_ANOMALY_PROB + STACK_TRACE_PROB + FREQUENCY_SPIKE_PROB:
+            log.warning(">>> Injecting FREQUENCY SPIKE ANOMALY (503 Error)...")
             log_record = simulator.generate_frequency_spike_log(trace_id, span_id)
+            
         else:
-            is_degraded = in_latency_window
+            # For normal logs, separately decide if they should show high latency
+            is_degraded = random.random() < LATENCY_ANOMALY_PROB
+            if is_degraded:
+                log.info("... injecting high latency into normal log ...")
             log_record = simulator.generate_normal_log(trace_id, span_id, is_degraded=is_degraded)
         
         yield log_record
@@ -80,7 +75,7 @@ async def log_generator() -> AsyncGenerator[Dict[str, Any], None]:
 async def stream_logs(client: httpx.AsyncClient):
     """Gathers logs from the generator and sends them in dynamic batches."""
     log.info(f"Starting dynamic log stream to '{INGESTOR_URL}'")
-    batch: List[Dict[str, Any]] = []
+    batch = []
     last_send_time = time.time()
     async for log_record in log_generator():
         batch.append(log_record)
@@ -94,6 +89,7 @@ async def stream_logs(client: httpx.AsyncClient):
             except httpx.RequestError as e:
                 log.error(f"Failed to stream logs to ingestor: {e}")
             finally:
+                log.info(f"Sent batch of {len(batch)} logs to VIA.")
                 batch = []
                 last_send_time = time.time()
 
@@ -112,8 +108,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="VIA - OTel Live Simulation Streamer",
-    description="A sophisticated, live log firehose that runs a continuous, looping 10-minute simulation with timed anomalies.",
+    title="VIA - OTel Chaos Streamer",
+    description="A high-throughput log firehose that randomly injects novel, frequency, and latency anomalies for real-time testing.",
     lifespan=lifespan
 )
 
@@ -122,6 +118,5 @@ async def health():
     return {
         "status": "ok",
         "streaming_to": INGESTOR_URL,
-        "simulation_mode": "Live Timed Anomaly Injection",
-        "cycle_length_sec": SIMULATION_CYCLE_SEC
+        "simulation_mode": "Randomized Chaos Injection"
     }

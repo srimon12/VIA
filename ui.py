@@ -168,7 +168,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="VIA – Vector Incident Atlas", js
             
             refresh_radar_btn.click(
                 fn=fetch_clusters,
-                inputs=[api_base, gr.State(None), gr.State("")],
+                inputs=[api_base, gr.State(15), gr.State("")],
                 outputs=[radar_status, radar_df, radar_clusters_state, gr.State(None), last_updated_display]
             )
 
