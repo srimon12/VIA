@@ -1,8 +1,20 @@
 # 🛰️ Vector Incident Atlas (VIA)
 
-Vector Incident Atlas (VIA) is a real-time, on-premise log intelligence platform. It acts as a semantic radar for your entire log stream, automatically detecting behavioral anomalies and providing the context needed to resolve incidents faster.
+**A Qdrant "Think Outside the Bot" Hackathon Submission**
 
-Instead of reactive keyword searching, VIA uses a Two-Tiered Detection architecture to understand the "rhythm" of your system. It identifies novel and frequency-based anomalies in real-time, promotes them to a permanent "knowledge graph," and learns from operator feedback, becoming an adaptive immune system for your operations.
+Vector Incident Atlas (VIA) is a real-time, on-premise log intelligence platform designed to showcase the advanced, non-AI capabilities of Qdrant for observability. Instead of a typical RAG chatbot, VIA treats the entire log stream as a living system, using vector search to detect behavioral anomalies in its "rhythm".
+
+### Innovative Use of Qdrant Features
+
+This project moves beyond simple semantic search to highlight Qdrant's power as a core operational intelligence engine:
+- **Two-Tiered Detection**: A high-throughput Tier 1 monitor uses "Rhythm Hashing" for real-time anomaly detection, promoting significant events to a permanent Tier 2 knowledge graph.
+- **Advanced Triage Engine**: The "Atlas" UI is powered by Qdrant's Recommendation API, allowing operators to provide positive and negative examples to surgically isolate the root cause of an incident.
+- **Automated Incident Clustering**: We use Qdrant's Grouping API to dynamically cluster related log events into unique incidents directly within the database, without external ML models.
+- **Scalable by Design**: The architecture uses time-partitioned collections and a federated query layer to handle massive data volumes, with Tier 2 collections using on-disk storage and scalar quantization for a minimal memory footprint.
+- **Adaptive Control Loop**: A complete feedback system allows operators to "Snooze" alerts or "Mark as Normal" to permanently patch the detection engine, with every patch generating a new regression test case.
+
+---
+_ (Your existing README content follows here...) _
 
 ## Core Features
 
@@ -144,8 +156,8 @@ All endpoints are prefixed with `/api/v1`.
 
 ### Analysis:
 - `POST /analysis/tier1/rhythm_anomalies` - Detects novel patterns in Tier 1 and promotes them.
-- `POST /analysis/tier2/anomalies` - Retrieves promoted event clusters from Tier 2.
-- `POST /analysis/tier2/similar` - Finds similar past events from the Tier 2 knowledge graph.
+- `POST /analysis/tier2/clusters` - Retrieves promoted event clusters from Tier 2.
+- `POST /analysis/tier2/triage` - Finds similar past events using positive/negative examples from the Tier 2 knowledge graph.
 
 ### Control Loop:
 - `POST /control/suppress` - Temporarily snoozes a rhythm_hash.
@@ -169,7 +181,7 @@ All endpoints are prefixed with `/api/v1`.
 ## Roadmap
 
 - [ ] Build a production-grade Vite/React frontend for visualization and interaction.
-- [ ] Expand the "Rhythm Hashing" engine to include frequency-based anomalies.
+- [x] Expand the "Rhythm Hashing" engine to include frequency-based anomalies.
 - [ ] Add real-world ingestion sources (e.g., Kafka consumer, direct OTel collector integration).
 - [ ] Integrate with ChatOps tools (Slack) for proactive alerting.
 
