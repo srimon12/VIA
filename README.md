@@ -1,8 +1,8 @@
-# 🛰️ Vector Incident Atlas (VIA)
+# 🛰️ VeriStamp Incident Atlas (VIA)
 
 **A Qdrant "Think Outside the Bot" Hackathon Submission**
 
-Vector Incident Atlas (VIA) is a real-time, on-premise log intelligence platform designed to showcase the advanced, non-AI capabilities of Qdrant for observability. Instead of a typical RAG chatbot, VIA treats the entire log stream as a living system, using vector search to detect behavioral anomalies in its "rhythm".
+VeriStamp Incident Atlas (VIA) is a real-time, on-premise log intelligence platform designed to showcase the advanced, non-AI capabilities of Qdrant for observability. Instead of a typical RAG chatbot, VIA treats the entire log stream as a living system, using vector search to detect behavioral anomalies in its "rhythm".
 
 ### Innovative Use of Qdrant Features
 

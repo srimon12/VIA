@@ -249,8 +249,8 @@ JS_AUTO_REFRESH = """
 }
 """
 
-with gr.Blocks(theme=gr.themes.Soft(), title="VIA – Vector Incident Atlas", js=JS_AUTO_REFRESH) as demo:
-    gr.Markdown("# 🛰️ VIA – Vector Incident Atlas")
+with gr.Blocks(theme=gr.themes.Soft(), title="VIA – VeriStamp Incident Atlas", js=JS_AUTO_REFRESH) as demo:
+    gr.Markdown("# 🛰️ VIA – VeriStamp Incident Atlas")
     gr.Markdown("An automated, adaptive log intelligence platform.")
     with gr.Row():
         api_base = gr.Textbox(value="http://127.0.0.1:8000/api/v1", label="API Base URL", scale=3)
