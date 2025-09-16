@@ -30,8 +30,8 @@ class DetectSchemaRequest(BaseModel):
 
 # --- Analysis & Querying ---
 class AnomalyQuery(BaseModel):
-    start_ts: int
-    end_ts: int
+    start_ts: Optional[int] = None
+    end_ts: Optional[int] = None
     text_filter: Optional[str] = None
 
 class RhythmQuery(BaseModel):
