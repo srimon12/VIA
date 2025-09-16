@@ -6,13 +6,14 @@ from typing import Any, Dict, List, Optional
 from qdrant_client import models
 from app.core.config import settings
 from app.services.qdrant_service import QdrantService
+from app.services.control_service import ControlService
 
 log = logging.getLogger("api.services.forensic_analysis")
 
 class ForensicAnalysisService:
-    def __init__(self, qdrant_service: QdrantService) -> None:
+    def __init__(self, qdrant_service: QdrantService, control_service: ControlService) -> None:
         self.qdrant_service = qdrant_service
-
+        self.control_service = control_service
     async def find_tier2_clusters(self, start_ts: int, end_ts: int, text_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         must_conditions = []
 
@@ -59,6 +60,9 @@ class ForensicAnalysisService:
                 groups.extend(r.groups)
         
         groups.sort(key=lambda g: g.hits[0].score, reverse=True)
+        unpatched_groups = [
+            g for g in groups if not self.control_service.is_suppressed_or_patched(g.id)
+        ]
 
         return [{
             "cluster_id": g.id, 
@@ -67,7 +71,7 @@ class ForensicAnalysisService:
                 "id": g.hits[0].id,
                 "payload": g.hits[0].payload
             }
-        } for g in groups if g.hits]
+        } for g in unpatched_groups if g.hits]
     async def triage_similar_events(self, positive_ids: List[str], negative_ids: List[str], start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
         if not positive_ids:
             return []

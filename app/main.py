@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     app.state.promotion_service = promotion_service
     app.state.ingestion_service = IngestionService(qdrant_service)
     app.state.rhythm_analysis_service = RhythmAnalysisService(qdrant_service, control_service, promotion_service)
-    app.state.forensic_analysis_service = ForensicAnalysisService(qdrant_service)
+    app.state.forensic_analysis_service = ForensicAnalysisService(qdrant_service, control_service)
     app.state.schema_service = SchemaService()
     
     # --- Start the automated background worker ---

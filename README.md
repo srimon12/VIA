@@ -33,7 +33,7 @@ Designed to ingest data from real-time sources like OpenTelemetry (OTel) streams
 Leverages time-partitioned collections in Qdrant, managed by a federated query layer in the API, allowing the system to scale to terabytes of daily log volume.
 
 ### Dynamic Schema Engine:
-An API for analyzing raw log files, suggesting a parsing schema, and allowing users to configure new data sources on the fly.
+A complete data onboarding system that makes VIA adaptable to new log formats. Instead of requiring manual configuration, users can upload a sample log file through the "Data Sources" UI tab. The backend analyzes the structure—supporting JSON, OTel, and BGL formats—and suggests a parsing schema, which can then be saved and used for future ingestion.
 
 ## Architecture Overview
 
@@ -169,7 +169,18 @@ curl -X POST http://localhost:8000/api/v1/control/suppress \
 ```
 
 If you run the Tier 1 analysis again (Step B), this anomaly should no longer appear.
+#### Step E: Test the Dynamic Schema Engine
+You can test the schema detection endpoint with a sample log line to see the suggested structure.
 
+```bash
+curl -X POST http://localhost:8000/api/v1/schemas/detect \
+-H "Content-Type: application/json" \
+-d '{
+  "source_name": "BGL_Test",
+  "sample_logs": [
+    "1117838570 2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.675872 R02-M1-N0-C:J12-U11 RAS KERNEL INFO instruction cache parity error corrected"
+  ]
+}'
 ## API Endpoints Overview
 
 All endpoints are prefixed with `/api/v1`.
