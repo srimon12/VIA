@@ -13,3 +13,5 @@ uv.lock
 digest.txt
 todo.md
 prds/
+evals/
+registry.db

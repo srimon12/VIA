@@ -94,3 +94,12 @@ class SchemaService:
             return None
         finally:
             conn.close()
+    def list_schemas(self) -> List[str]:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('SELECT source_name FROM schemas')
+            rows = cursor.fetchall()
+            return [row["source_name"] for row in rows]
+        finally:
+            conn.close()

@@ -3,7 +3,8 @@
 import logging
 import time
 import sqlite3
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Any
+import json
 import pathlib
 import yaml # Add this import
 
@@ -95,3 +96,41 @@ class ControlService:
             else:
                 del self.suppression_cache[rhythm_hash]
         return False
+
+    def get_all_rules(self) -> Dict[str, Any]:
+        """Returns all active patches and temporary suppressions."""
+        # Get permanent patches from the database
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT rhythm_hash, reason, created_ts FROM patch_registry WHERE is_active = 1")
+            patches = [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+        # Get temporary suppressions from the in-memory cache
+        now = int(time.time())
+        suppressions = [
+            {"rhythm_hash": h, "expires_at": ts}
+            for h, ts in self.suppression_cache.items() if ts > now
+        ]
+        
+        return {"patches": patches, "suppressions": suppressions}
+
+    def delete_patch(self, rhythm_hash: str) -> None:
+        """Deactivates a permanent patch in the database."""
+        conn = get_db_connection()
+        try:
+            with conn:
+                conn.execute("UPDATE patch_registry SET is_active = 0 WHERE rhythm_hash = ?", (rhythm_hash,))
+            if rhythm_hash in self.patch_registry:
+                self.patch_registry.remove(rhythm_hash)
+            log.info(f"Deactivated patch for rhythm_hash '{rhythm_hash}'.")
+        finally:
+            conn.close()
+
+    def delete_suppression(self, rhythm_hash: str) -> None:
+        """Removes a temporary suppression from the cache."""
+        if rhythm_hash in self.suppression_cache:
+            del self.suppression_cache[rhythm_hash]
+            log.info(f"Removed suppression for rhythm_hash '{rhythm_hash}'.")

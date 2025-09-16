@@ -7,12 +7,14 @@ import random
 import time
 from contextlib import asynccontextmanager
 from typing import Dict, Any, AsyncGenerator
-
+import json 
+import pathlib
 import httpx
 from fastapi import FastAPI
 from dotenv import load_dotenv
 
 from generate_logs import ServiceSimulator
+LIVE_LOG_FILE = "logs/live_stream.jsonl"
 
 # --- Configuration ---
 load_dotenv()
@@ -75,6 +77,11 @@ async def log_generator() -> AsyncGenerator[Dict[str, Any], None]:
 async def stream_logs(client: httpx.AsyncClient):
     """Gathers logs from the generator and sends them in dynamic batches."""
     log.info(f"Starting dynamic log stream to '{INGESTOR_URL}'")
+    log_dir = pathlib.Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    live_log_path = log_dir / "live_stream.jsonl"
+    live_log_path.write_text("") 
+    log.info(f"Streaming raw logs will be saved to '{live_log_path}'")
     batch = []
     last_send_time = time.time()
     async for log_record in log_generator():
@@ -83,6 +90,9 @@ async def stream_logs(client: httpx.AsyncClient):
         if len(batch) >= MAX_BATCH_SIZE or time_since_last_send >= MAX_BATCH_INTERVAL_SEC:
             if not batch: continue
             try:
+                with open(live_log_path, "a", encoding="utf-8") as f:
+                    for record in batch:
+                        f.write(json.dumps(record) + "\n")
                 response = await client.post(INGESTOR_URL, json=batch)
                 if 400 <= response.status_code < 600:
                     log.error(f"Ingestor returned an error! Status: {response.status_code}, Response: {response.text[:200]}")

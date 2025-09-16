@@ -29,3 +29,24 @@ async def patch_rhythm_anomaly(
         context_logs=request.context_logs,
     )
     return {"status": "ok", "message": f"Hash {request.rhythm_hash} patched and eval case generated."}
+@router.get("/rules")
+async def get_all_active_rules(
+    control_service: ControlService = Depends(get_control_service),
+) -> Dict[str, Any]:
+    return control_service.get_all_rules()
+
+@router.delete("/patch/{rhythm_hash}")
+async def delete_patch_rule(
+    rhythm_hash: str,
+    control_service: ControlService = Depends(get_control_service),
+) -> Dict[str, Any]:
+    control_service.delete_patch(rhythm_hash)
+    return {"status": "ok", "message": f"Patch for {rhythm_hash} has been deactivated."}
+
+@router.delete("/suppress/{rhythm_hash}")
+async def delete_suppression_rule(
+    rhythm_hash: str,
+    control_service: ControlService = Depends(get_control_service),
+) -> Dict[str, Any]:
+    control_service.delete_suppression(rhythm_hash)
+    return {"status": "ok", "message": f"Suppression for {rhythm_hash} has been removed."}

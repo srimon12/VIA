@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.schemas.models import DetectSchemaRequest, LogSchema
 from app.services.schema_service import SchemaService
+from typing import List
 
 router = APIRouter()
 log = logging.getLogger("api.endpoints.schema")
@@ -48,3 +49,9 @@ async def get_schema(
     if not schema:
         raise HTTPException(status_code=404, detail=f"Schema for source '{source_name}' not found.")
     return schema
+@router.get("/", response_model=List[str])
+async def list_schemas_endpoint(
+    service: SchemaService = Depends(get_schema_service),
+):
+    """Returns a list of all saved schema source names."""
+    return service.list_schemas()

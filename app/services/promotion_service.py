@@ -39,6 +39,8 @@ class PromotionService:
                 "count": len(logs),
                 "service": sorted_logs[0].get("service", "unknown"),
                 "severity": sorted_logs[0].get("severity", "INFO"),
+                "anomaly_type": sorted_logs[0].get("anomaly_type", "unknown"),
+                "anomaly_context": sorted_logs[0].get("anomaly_context", ""),
                 "body": text_for_embedding,
                 "sample_logs": [log["full_log_json"] for log in sorted_logs[:5]],
             }

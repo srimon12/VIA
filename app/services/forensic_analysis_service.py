@@ -12,7 +12,7 @@ log = logging.getLogger("api.services.forensic_analysis")
 class ForensicAnalysisService:
     def __init__(self, qdrant_service: QdrantService) -> None:
         self.qdrant_service = qdrant_service
-        
+
     async def find_tier2_clusters(self, start_ts: int, end_ts: int, text_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         must_conditions = []
 
@@ -62,24 +62,25 @@ class ForensicAnalysisService:
 
         return [{
             "cluster_id": g.id, 
-            "incident_count": g.hits[0].payload.get('count', 1), 
-            "top_hit": g.hits[0].payload
+            "incident_count": g.hits[0].payload.get('count', 1),
+            "top_hit": {
+                "id": g.hits[0].id,
+                "payload": g.hits[0].payload
+            }
         } for g in groups if g.hits]
     async def triage_similar_events(self, positive_ids: List[str], negative_ids: List[str], start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
         if not positive_ids:
             return []
-
-        # Filter is implicitly handled by querying only the relevant daily collections
-        req = models.RecommendRequest(
+        collections = self.qdrant_service._get_collections_for_window(settings.TIER_2_COLLECTION_PREFIX, start_ts, end_ts)
+        tasks = [self.qdrant_service.client.recommend(
+            collection_name=c,
             positive=positive_ids,
             negative=negative_ids,
             using="log_dense_vector",
             limit=50,
             with_payload=True
-        )
+        ) for c in collections]
 
-        collections = self.qdrant_service._get_collections_for_window(settings.TIER_2_COLLECTION_PREFIX, start_ts, end_ts)
-        tasks = [self.qdrant_service.client.recommend(collection_name=c, request=req) for c in collections]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_hits = []
@@ -88,4 +89,4 @@ class ForensicAnalysisService:
                 all_hits.extend(r)
 
         all_hits.sort(key=lambda p: p.score, reverse=True)
-        return [{"id": p.id, "score": p.score, "payload": p.payload} for p in all_hits[:req.limit]]
+        return [{"id": p.id, "score": p.score, "payload": p.payload} for p in all_hits[:50]]
