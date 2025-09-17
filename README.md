@@ -13,6 +13,7 @@ This project moves beyond simple semantic search to highlight Qdrant's power as 
 - **Scalable by Design**: The architecture uses time-partitioned collections and a federated query layer to handle massive data volumes, with Tier 2 collections using on-disk storage and scalar quantization for a minimal memory footprint.
 - **Adaptive Control Loop**: A complete feedback system allows operators to "Snooze" alerts or "Mark as Normal" to permanently patch the detection engine, with every patch generating a new regression test case.
 
+For a detailed breakdown of how VIA leverages these and other Qdrant features, see [QDRANT-FEATURES.md](./QDRANT-FEATURES.md).
 ---
 ## Core Features
 
