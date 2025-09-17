@@ -14,8 +14,6 @@ This project moves beyond simple semantic search to highlight Qdrant's power as 
 - **Adaptive Control Loop**: A complete feedback system allows operators to "Snooze" alerts or "Mark as Normal" to permanently patch the detection engine, with every patch generating a new regression test case.
 
 ---
-_ (Your existing README content follows here...) _
-
 ## Core Features
 
 ### Two-Tiered Anomaly Detection:
@@ -97,7 +95,9 @@ pip install uv
 Then, install the project dependencies from `pyproject.toml`:
 
 ```bash
-uv pip install
+uv pip install -r requirements.txt
+or 
+pip install -r requirements.txt
 ```
 
 ### 4. Running the System Locally
@@ -126,6 +126,14 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 The API is now live and available at http://localhost:8000.
+
+#### Start the UI
+Now to run the UI 
+```bash
+uv run ui.py
+or
+python ui.py
+```
 
 ### 5. Testing the End-to-End Flow
 With all services running, you can use curl to interact with the API.
@@ -181,6 +189,7 @@ curl -X POST http://localhost:8000/api/v1/schemas/detect \
     "1117838570 2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.675872 R02-M1-N0-C:J12-U11 RAS KERNEL INFO instruction cache parity error corrected"
   ]
 }'
+```
 ## API Endpoints Overview
 
 All endpoints are prefixed with `/api/v1`.
